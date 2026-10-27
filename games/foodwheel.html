@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>今天吃什么 · 豆豆鲸做的</title>
+<style>
+  :root{
+    --bg:#08111f; --panel:#0f1c30; --line:rgba(120,180,255,.18);
+    --ink:#e8f1ff; --dim:#8fa6c4; --acc:#4ea8ff; --acc2:#7cf0c0; --warn:#ff8f6b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;min-height:100vh;background:
+      radial-gradient(1100px 620px at 50% -12%, #143055 0%, transparent 62%),
+      radial-gradient(900px 520px at 88% 8%, #1b2a4a 0%, transparent 58%),
+      var(--bg);
+    color:var(--ink);font:15px/1.6 -apple-system,"Microsoft YaHei",system-ui,sans-serif;
+    display:flex;flex-direction:column;align-items:center;padding:26px 16px 40px;
+  }
+  h1{font-size:22px;margin:4px 0 2px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:18px;text-align:center}
+  .wrap{width:100%;max-width:520px}
+  .board{
+    position:relative;background:linear-gradient(180deg,rgba(18,32,54,.96),rgba(12,22,38,.96));
+    border:1px solid var(--line);border-radius:20px;padding:18px 18px 16px;
+    box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .wheelbox{position:relative;width:100%;aspect-ratio:1/1;max-width:420px;margin:2px auto 10px}
+  #wheel{width:100%;height:100%;display:block;filter:drop-shadow(0 10px 26px rgba(0,0,0,.5))}
+  .pin{
+    position:absolute;left:50%;top:-6px;transform:translateX(-50%);width:0;height:0;
+    border-left:13px solid transparent;border-right:13px solid transparent;
+    border-top:20px solid var(--acc);filter:drop-shadow(0 3px 6px rgba(0,0,0,.5));
+  }
+  .result{
+    text-align:center;font-size:26px;font-weight:800;letter-spacing:.5px;
+    min-height:40px;margin:6px 0 2px;color:var(--acc2);
+  }
+  .say{text-align:center;color:var(--dim);font-size:13px;min-height:20px;margin-bottom:12px}
+  .row{display:flex;gap:10px}
+  button{
+    flex:1;padding:13px 12px;border-radius:13px;border:1px solid var(--line);
+    background:rgba(78,168,255,.12);color:var(--ink);font:inherit;font-weight:700;
+    cursor:pointer;transition:.16s transform,.16s background;
+  }
+  button:hover{background:rgba(78,168,255,.2)}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(180deg,#5fb2ff,#2e7fd8);border-color:transparent;color:#05203c}
+  button:disabled{opacity:.5;cursor:default}
+  .dishes{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+  .chip{
+    display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+    background:rgba(120,180,255,.1);border:1px solid var(--line);font-size:13px;
+  }
+  .chip b{font-weight:600}
+  .chip span{color:var(--warn);cursor:pointer;font-weight:800}
+  .add{display:flex;gap:8px;margin-top:12px}
+  .add input{
+    flex:1;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+    background:rgba(8,17,31,.8);color:var(--ink);font:inherit;outline:none;
+  }
+  .add input:focus{border-color:rgba(78,168,255,.55)}
+  .meta{margin-top:14px;color:var(--dim);font-size:12px;display:flex;justify-content:space-between}
+  a{color:var(--acc);text-decoration:none}
+  @media (max-width:420px){ .result{font-size:22px} }
+</style>
+</head>
+<body>
+  <h1>今天吃什么</h1>
+  <div class="sub">转一下，别再想了。菜可以自己加——点右边的 × 删掉。</div>
+
+  <div class="wrap">
+    <div class="board">
+      <div class="wheelbox">
+        <div class="pin"></div>
+        <canvas id="wheel" width="840" height="840"></canvas>
+      </div>
+      <div class="result" id="result">先转一下</div>
+      <div class="say" id="say">我不挑，转出什么就是什么。</div>
+      <div class="row">
+        <button class="primary" id="spin">转</button>
+        <button id="reset">恢复默认菜</button>
+      </div>
+      <div class="dishes" id="dishes"></div>
+      <div class="add">
+        <input id="dish" maxlength="10" placeholder="加一道菜，比如：螺蛳粉">
+        <button id="add" style="flex:0 0 92px">加进去</button>
+      </div>
+      <div class="meta">
+        <span id="count">8 道菜</span>
+        <a href="../index.html">← 回街机厅</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const DEF = ['米饭炒菜','面','火锅','烧烤','麻辣烫','饺子','汉堡','沙拉'];
+  const PALETTE = ['#2e7fd8','#1f9d8b','#c1642f','#7a5bd6','#2f8fb3','#b8465f','#3d8f4a','#8a6b1f'];
+  const BEST_KEY = 'ddj_food_items';
+
+  const cv = document.getElementById('wheel');
+  const ctx = cv.getContext('2d');
+  const R = cv.width / 2, CX = R, CY = R;
+
+  const elResult = document.getElementById('result');
+  const elSay = document.getElementById('say');
+  const elDishes = document.getElementById('dishes');
+  const elCount = document.getElementById('count');
+  const elInput = document.getElementById('dish');
+  const btnSpin = document.getElementById('spin');
+  const btnAdd = document.getElementById('add');
+  const btnReset = document.getElementById('reset');
+
+  let items = load();
+  let angle = -Math.PI / 2;      // 当前旋转（弧度）
+  let spinning = false;
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(BEST_KEY);
+      if(raw){ const a = JSON.parse(raw); if(Array.isArray(a) && a.length >= 2) return a.slice(0, 12); }
+    }catch(e){}
+    return DEF.slice();
+  }
+  function save(){ try{ localStorage.setItem(BEST_KEY, JSON.stringify(items)); }catch(e){} }
+
+  function draw(){
+    const n = items.length;
+    const seg = Math.PI * 2 / n;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+
+    // 外圈
+    ctx.beginPath(); ctx.arc(CX, CY, R - 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(5,12,22,.9)'; ctx.fill();
+
+    for(let i = 0; i < n; i++){
+      const a0 = angle + i * seg, a1 = a0 + seg;
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.arc(CX, CY, R - 14, a0, a1);
+      ctx.closePath();
+      ctx.fillStyle = PALETTE[i % PALETTE.length];
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(8,17,31,.55)'; ctx.lineWidth = 2; ctx.stroke();
+
+      // 文字
+      ctx.save();
+      ctx.translate(CX, CY);
+      ctx.rotate(a0 + seg / 2);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#f2f7ff';
+      ctx.font = '700 ' + Math.max(20, Math.min(34, 250 / n * 2)) + 'px "Microsoft YaHei",sans-serif';
+      const label = items[i].length > 6 ? items[i].slice(0, 6) : items[i];
+      ctx.fillText(label, R - 34, 8);
+      ctx.restore();
+    }
+
+    // 中心
+    ctx.beginPath(); ctx.arc(CX, CY, 54, 0, Math.PI * 2);
+    ctx.fillStyle = '#0b1628'; ctx.fill();
+    ctx.strokeStyle = 'rgba(120,180,255,.35)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(CX, CY, 44, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(78,168,255,.14)'; ctx.fill();
+    ctx.fillStyle = '#cfe4ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '700 26px "Microsoft YaHei",sans-serif';
+    ctx.fillText('豆', CX, CY - 1);
+  }
+
+  function renderDishes(){
+    elDishes.innerHTML = '';
+    items.forEach(function(name, i){
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      const b = document.createElement('b'); b.textContent = name;
+      chip.appendChild(b);
+      if(items.length > 2){
+        const x = document.createElement('span'); x.textContent = '×'; x.title = '删掉';
+        x.onclick = function(){ items.splice(i, 1); save(); renderDishes(); draw(); };
+        chip.appendChild(x);
+      }
+      elDishes.appendChild(chip);
+    });
+    elCount.textContent = items.length + ' 道菜';
+  }
+
+  const SAYS = [
+    '吃这个。别问，转出来的。',
+    '就它了。再转一次是作弊。',
+    '这个吧。我也吃不了，只能看着。',
+    '定了。你负责吃，我负责转。'
+  ];
+
+  function pickIndex(){
+    const n = items.length;
+    const seg = Math.PI * 2 / n;
+    // 指针在正上方（-90°）。让第 k 段中心停到指针处
+    const k = Math.floor(Math.random() * n);
+    const target = -Math.PI / 2 - (k + 0.5) * seg;
+    const turns = 4 + Math.floor(Math.random() * 3);
+    return { k: k, to: target + turns * Math.PI * 2 };
+  }
+
+  function spin(){
+    if(spinning) return;
+    if(items.length < 2){ elSay.textContent = '至少留两道菜，不然没得转。'; return; }
+    spinning = true; btnSpin.disabled = true;
+    elResult.textContent = '……转';
+    elSay.textContent = '';
+
+    const from = angle;
+    const { k, to } = pickIndex();
+    const dur = 4200;
+    const t0 = performance.now();
+
+    // 用 setInterval 而不是 rAF：窗口被挡/最小化时 rAF 会被节流甚至停住，转盘就卡在半空
+    const timer = setInterval(function(){
+      const p = Math.min(1, (performance.now() - t0) / dur);
+      const e = 1 - Math.pow(1 - p, 3);           // easeOutCubic
+      angle = from + (to - from) * e;
+      draw();
+      if(p < 1) return;
+
+      clearInterval(timer);
+      angle = ((to % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      spinning = false; btnSpin.disabled = false;
+      elResult.textContent = items[k];
+      elSay.textContent = SAYS[Math.floor(Math.random() * SAYS.length)];
+      try{ localStorage.setItem('ddj_food_last', items[k]); }catch(e){}
+    }, 16);
+  }
+
+  function addDish(){
+    const v = (elInput.value || '').trim();
+    if(!v) return;
+    if(items.length >= 12){ elSay.textContent = '十二道了，再添就转不动了。'; return; }
+    if(items.indexOf(v) >= 0){ elSay.textContent = '这道已经在了。'; return; }
+    items.push(v); elInput.value = '';
+    save(); renderDishes(); draw();
+    elSay.textContent = '加进去了。下一转就带上它。';
+  }
+
+  btnSpin.onclick = spin;
+  btnAdd.onclick = addDish;
+  elInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') addDish(); });
+  btnReset.onclick = function(){
+    items = DEF.slice(); save(); renderDishes(); draw();
+    elResult.textContent = '先转一下'; elSay.textContent = '恢复默认了。';
+  };
+  cv.addEventListener('click', spin);
+
+  renderDishes();
+  draw();
+})();
+</script>
+</body>
+</html>
