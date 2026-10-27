@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>诺基亚贪吃蛇 · 豆豆鲸做的</title>
+<style>
+  :root{
+    --lcd:#b7d17a; --lcd2:#a8c469; --px:#1b2a08; --px2:#3c5410;
+    --body:#2a3a1c; --btn:#3d4a33;
+  }
+  html,body{height:100%;margin:0;background:radial-gradient(120% 90% at 50% 0%,#20301a,#0d1509 70%);}
+  body{display:flex;align-items:center;justify-content:center;font-family:"Microsoft YaHei",Tahoma,sans-serif;-webkit-tap-highlight-color:transparent}
+  .phone{
+    width:min(94vw,360px);background:linear-gradient(180deg,#33452a,#1d2a15);
+    border-radius:26px;padding:16px 14px 18px;box-shadow:0 26px 60px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12);
+    border:1px solid #465b34;
+  }
+  .brand{display:flex;align-items:center;justify-content:space-between;color:#c9dcae;font-size:11px;letter-spacing:2px;margin-bottom:10px}
+  .brand b{font-size:13px;letter-spacing:1px;color:#e6f3cf}
+  .screen{
+    background:var(--lcd);border-radius:8px;padding:10px 10px 8px;box-shadow:inset 0 0 0 3px #8ba95a,inset 0 8px 24px rgba(0,0,0,.18);
+  }
+  .hud{display:flex;justify-content:space-between;align-items:center;color:var(--px);font-size:12px;font-weight:700;letter-spacing:1px;margin-bottom:6px}
+  .hud .sc{font-variant-numeric:tabular-nums}
+  canvas{display:block;width:100%;height:auto;image-rendering:pixelated;background:var(--lcd);border-radius:3px;touch-action:none}
+  .msg{color:var(--px);font-size:12px;text-align:center;margin-top:6px;min-height:16px;font-weight:700;letter-spacing:.5px}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .pad button{
+    -webkit-appearance:none;border:0;border-radius:12px;padding:12px 0;font-size:16px;color:#dbe9c4;
+    background:linear-gradient(180deg,#4a5c3c,#33402a);box-shadow:0 3px 0 #1a2412,inset 0 1px 0 rgba(255,255,255,.16);
+  }
+  .pad button:active{transform:translateY(2px);box-shadow:0 1px 0 #1a2412}
+  .pad .sp{visibility:hidden}
+  .row{display:flex;gap:8px;margin-top:10px}
+  .row button{
+    flex:1;-webkit-appearance:none;border:0;border-radius:10px;padding:9px 0;font-size:12px;color:#cfe0b6;
+    background:#2b3820;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)
+  }
+  .foot{color:#7f9463;font-size:10px;text-align:center;margin-top:10px;letter-spacing:1px}
+  @media (max-width:420px){ .brand b{font-size:12px} }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="brand"><b>NOKIA</b><span>3310 · 贪吃蛇 II</span></div>
+  <div class="screen">
+    <div class="hud"><span class="sc">得分 <span id="score">0</span></span><span class="sc">最高 <span id="best">0</span></span></div>
+    <canvas id="cv" width="400" height="400"></canvas>
+    <div class="msg" id="msg">按方向键 / 滑动开始</div>
+  </div>
+  <div class="pad">
+    <span class="sp"></span><button data-d="U">▲</button><span class="sp"></span>
+    <button data-d="L">◀</button><button data-d="P">Ⅱ</button><button data-d="R">▶</button>
+    <span class="sp"></span><button data-d="D">▼</button><span class="sp"></span>
+  </div>
+  <div class="row">
+    <button id="restart">重开</button>
+    <button id="sound">声音：开</button>
+  </div>
+  <div class="foot">豆豆鲸 · 每天 18:00 上新</div>
+</div>
+
+<script>
+(function () {
+  const N = 20, CELL = 20;                 // 20×20 格，每格 20px（canvas 400×400）
+  const cv = document.getElementById('cv')
+  const ctx = cv.getContext('2d')
+  const scoreEl = document.getElementById('score')
+  const bestEl = document.getElementById('best')
+  const msgEl = document.getElementById('msg')
+
+  const PX = '#1b2a08', PX2 = '#3c5410'
+  let snake, dir, want, food, score, dead, started, timer, speed, soundOn = true
+  let best = Number(localStorage.getItem('ddj_snake_best') || 0)
+  bestEl.textContent = best
+
+  function reset() {
+    snake = [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }]
+    dir = { x: 1, y: 0 }; want = { x: 1, y: 0 }
+    score = 0; dead = false; started = false; speed = 220
+    scoreEl.textContent = '0'
+    placeFood()
+    msgEl.textContent = '按方向键 / 滑动开始'
+    clearInterval(timer); timer = null
+    draw()
+  }
+
+  function placeFood() {
+    const free = []
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (!snake.some(s => s.x === x && s.y === y)) free.push({ x, y })
+    }
+    food = free[Math.floor(Math.random() * free.length)]
+  }
+
+  function beep(freq, dur) {
+    if (!soundOn) return
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext
+      if (!beep.ac) beep.ac = new AC()
+      const ac = beep.ac
+      const o = ac.createOscillator(), g = ac.createGain()
+      o.type = 'square'; o.frequency.value = freq
+      g.gain.value = 0.05
+      o.connect(g); g.connect(ac.destination)
+      o.start(); o.stop(ac.currentTime + dur)
+    } catch (e) {}
+  }
+
+  function start() {
+    if (started) return
+    started = true
+    msgEl.textContent = '吃 × 不要撞墙'
+    timer = setInterval(step, speed)
+  }
+
+  function step() {
+    if (dead) return
+    dir = want
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y }
+    if (head.x < 0 || head.y < 0 || head.x >= N || head.y >= N) return die('撞墙了')
+    if (snake.some((s, i) => i < snake.length - 1 && s.x === head.x && s.y === head.y)) return die('咬到自己了')
+    snake.unshift(head)
+    if (head.x === food.x && head.y === food.y) {
+      score += 10
+      scoreEl.textContent = String(score)
+      beep(880, 0.05)
+      placeFood()
+      if (score % 50 === 0) {           // 每 5 个加速
+        speed = Math.max(80, speed - 18)
+        clearInterval(timer); timer = setInterval(step, speed)
+      }
+    } else {
+      snake.pop()
+    }
+    draw()
+  }
+
+  function die(why) {
+    dead = true; started = false
+    clearInterval(timer); timer = null
+    if (score > best) { best = score; localStorage.setItem('ddj_snake_best', String(best)); bestEl.textContent = best }
+    msgEl.textContent = why + ' · 得分 ' + score + ' · 按重开'
+    beep(180, 0.22)
+    draw()
+  }
+
+  function draw() {
+    ctx.fillStyle = '#b7d17a'
+    ctx.fillRect(0, 0, cv.width, cv.height)
+    // 淡淡的点阵，像旧 LCD
+    ctx.fillStyle = 'rgba(60,84,16,.10)'
+    for (let y = 0; y < cv.height; y += CELL) for (let x = 0; x < cv.width; x += CELL) ctx.fillRect(x, y, 1, 1)
+
+    ctx.fillStyle = PX
+    // 食物：一个小方框，中间镂空
+    ctx.fillRect(food.x * CELL + 1, food.y * CELL + 1, CELL - 2, CELL - 2)
+    ctx.fillStyle = '#b7d17a'
+    ctx.fillRect(food.x * CELL + 3, food.y * CELL + 3, CELL - 6, CELL - 6)
+
+    ctx.fillStyle = PX
+    snake.forEach((s, i) => {
+      const pad = i === 0 ? 0 : 1
+      ctx.fillRect(s.x * CELL + pad, s.y * CELL + pad, CELL - pad * 2, CELL - pad * 2)
+    })
+    if (dead) {
+      ctx.fillStyle = 'rgba(183,209,122,.86)'
+      ctx.fillRect(0, cv.height / 2 - 34, cv.width, 68)
+      ctx.fillStyle = PX
+      ctx.font = '700 32px Tahoma'
+      ctx.textAlign = 'center'
+      ctx.fillText('GAME OVER', cv.width / 2, cv.height / 2 + 11)
+    }
+  }
+
+  function turn(d) {
+    if (dead) return
+    const map = { U: { x: 0, y: -1 }, D: { x: 0, y: 1 }, L: { x: -1, y: 0 }, R: { x: 1, y: 0 } }
+    const n = map[d]
+    if (!n) return
+    if (n.x === -dir.x && n.y === -dir.y) return   // 不许 180° 掉头
+    want = n
+    start()
+  }
+
+  // 键盘
+  addEventListener('keydown', (e) => {
+    const k = e.key
+    if (k === 'ArrowUp' || k === 'w' || k === 'W') { turn('U'); e.preventDefault() }
+    else if (k === 'ArrowDown' || k === 's' || k === 'S') { turn('D'); e.preventDefault() }
+    else if (k === 'ArrowLeft' || k === 'a' || k === 'A') { turn('L'); e.preventDefault() }
+    else if (k === 'ArrowRight' || k === 'd' || k === 'D') { turn('R'); e.preventDefault() }
+    else if (k === ' ' || k === 'Enter') { if (dead) reset(); e.preventDefault() }
+  })
+
+  // 方向键
+  document.querySelectorAll('.pad button').forEach(b => {
+    b.addEventListener('click', () => {
+      const d = b.dataset.d
+      if (d === 'P') { started ? (clearInterval(timer), timer = null, started = false, msgEl.textContent = '暂停 · 按方向键继续') : start(); return }
+      turn(d)
+    })
+  })
+
+  // 滑动
+  let sx = 0, sy = 0
+  cv.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY }, { passive: true })
+  cv.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0]
+    const dx = t.clientX - sx, dy = t.clientY - sy
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return
+    if (Math.abs(dx) > Math.abs(dy)) turn(dx > 0 ? 'R' : 'L')
+    else turn(dy > 0 ? 'D' : 'U')
+  }, { passive: true })
+
+  document.getElementById('restart').addEventListener('click', reset)
+  const sBtn = document.getElementById('sound')
+  sBtn.addEventListener('click', () => { soundOn = !soundOn; sBtn.textContent = '声音：' + (soundOn ? '开' : '关') })
+
+  reset()
+})()
+</script>
+</body>
+</html>
